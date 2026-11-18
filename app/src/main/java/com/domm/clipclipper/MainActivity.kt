@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
   var uri by remember { mutableStateOf<Uri?>(null) }
   var videoName by remember { mutableStateOf("No video selected") }
   var key by remember { mutableStateOf("") }
+  var maxClips by remember { mutableFloatStateOf(5f) }
   var status by remember { mutableStateOf("Choose a video to discover its best moments.") }
   var busy by remember { mutableStateOf(false) }
   var moments by remember { mutableStateOf(listOf<ClipMoment>()) }
@@ -104,6 +105,12 @@ class MainActivity : ComponentActivity() {
         Text("2. Let ChatGPT find the highlights", fontWeight = FontWeight.Bold)
         Text("OpenAI API access is required. API usage can cost money and is separate from ChatGPT subscriptions.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("OpenAI API key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+         Text("Maximum clips per analysis", color = Color.LightGray)
+         Text(maxClips.toInt().toString(), color = accent, fontWeight = FontWeight.Bold)
+        }
+        Slider(value = maxClips, onValueChange = { maxClips = it }, valueRange = 3f..8f, steps = 4)
+        Text("Budget Saver sends a compact, time-spread transcript to the AI and asks for only this many highlights. Video cutting stays on your phone.", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
         Button(onClick = {
          val selected = uri
          if (selected == null) { status = "Select a video first."; return@Button }
@@ -111,7 +118,7 @@ class MainActivity : ComponentActivity() {
          busy = true; status = "Transcribing audio and finding standout moments…"
          scope.launch {
           try {
-           moments = analyse(selected, key)
+           moments = analyse(selected, key, maxClips.toInt())
            status = if (moments.isEmpty()) "No suitable moments found in this video." else "Found ${moments.size} moments. Choose which clips to render."
           } catch (e: Exception) { status = "Analysis failed: ${e.message}" }
           finally { busy = false }
@@ -167,7 +174,7 @@ class MainActivity : ComponentActivity() {
 
  private fun stamp(t: Double): String = "%d:%02d".format(t.toInt() / 60, t.toInt() % 60)
 
- private suspend fun analyse(uri: Uri, apiKey: String): List<ClipMoment> = withContext(Dispatchers.IO) {
+ private suspend fun analyse(uri: Uri, apiKey: String, maxClips: Int): List<ClipMoment> = withContext(Dispatchers.IO) {
   val audio = extractAudio(uri)
   try {
    val form = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -181,8 +188,20 @@ class MainActivity : ComponentActivity() {
    val tr = JSONObject(trText)
    val duration = tr.optDouble("duration", 0.0)
    val segments = tr.optJSONArray("segments") ?: JSONArray()
-   val prompt = """Identify up to 8 excellent short-form video moments. Prefer funny, surprising, emotional, high-energy, useful or suspenseful sections. Aim for 15-60 seconds, include enough context, and do not cut off punchlines. Return ONLY JSON in this shape: {"clips":[{"start":12.0,"end":42.0,"title":"Short title","reason":"Why it is compelling"}]}. Times are seconds from video start. Video duration: $duration. Transcript segments: $segments"""
+   // Keep a compact, evenly-spaced sample so GPT sees the whole recording without a huge prompt.
+   val compact = JSONArray()
+   val stride = maxOf(1, kotlin.math.ceil(segments.length() / 160.0).toInt())
+   var transcriptChars = 0
+   for (i in 0 until segments.length() step stride) {
+    val segment = segments.getJSONObject(i)
+    val text = segment.optString("text").take(220)
+    if (transcriptChars + text.length > 10000) break
+    compact.put(JSONObject().put("start", segment.optDouble("start")).put("end", segment.optDouble("end")).put("text", text))
+    transcriptChars += text.length
+   }
+   val prompt = """Identify up to $maxClips excellent short-form video moments. Prefer funny, surprising, emotional, high-energy, useful or suspenseful sections. Aim for 15-60 seconds, include enough context, and do not cut off punchlines. Return ONLY JSON in this shape: {"clips":[{"start":12.0,"end":42.0,"title":"Short title","reason":"Why it is compelling"}]}. Times are seconds from video start. Video duration: $duration. Compact transcript sample (spread across the recording): $compact"""
    val payload = JSONObject().put("model", "gpt-4o-mini")
+    .put("max_tokens", 1200)
     .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
     .put("response_format", JSONObject().put("type", "json_object")).toString()
    val req = Request.Builder().url("https://api.openai.com/v1/chat/completions").header("Authorization", "Bearer $apiKey")
