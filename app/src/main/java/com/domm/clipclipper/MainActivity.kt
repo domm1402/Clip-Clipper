@@ -148,6 +148,16 @@ class MainActivity : ComponentActivity() {
      item {
       SectionCard("02", "AI settings", "Let the AI choose the moments. No manual trimming.", panel) {
        OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("OpenAI API key") }, placeholder = { Text("sk-…") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), shape = RoundedCornerShape(14.dp))
+       Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF211D35))) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+         Text("How to get your API key", color = Color.White, fontWeight = FontWeight.Bold)
+         Text("1. Tap the button below and sign in or create an OpenAI account.\n2. Open API keys and choose Create new secret key.\n3. Give the key a name, create it, then copy it straight away.\n4. Return here and paste the key into the box above.", color = muted, style = MaterialTheme.typography.bodySmall)
+         Text("Keep your key private. You may only be shown the full key once. API usage is billed separately from ChatGPT.", color = Color(0xFFD0CCDF), style = MaterialTheme.typography.labelSmall)
+         OutlinedButton(onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.openai.com/api-keys"))) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+          Text("OpenAI API keys")
+         }
+        }
+       }
        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text("Highlights to find", color = muted)
         Text(maxClips.toInt().toString(), color = accent, fontWeight = FontWeight.Bold)
