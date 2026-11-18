@@ -11,20 +11,32 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaItem.ClippingConfiguration
@@ -60,114 +72,184 @@ class MainActivity : ComponentActivity() {
   var videoName by remember { mutableStateOf("No video selected") }
   var key by remember { mutableStateOf("") }
   var maxClips by remember { mutableFloatStateOf(5f) }
-  var status by remember { mutableStateOf("Choose a video to discover its best moments.") }
+  var status by remember { mutableStateOf("Choose a video and let AI do the editing.") }
   var busy by remember { mutableStateOf(false) }
   var moments by remember { mutableStateOf(listOf<ClipMoment>()) }
-  var outputs by remember { mutableStateOf(listOf<String>()) }
+  var outputs by remember { mutableStateOf(listOf<Pair<String, String>>()) }
+  var progress by remember { mutableIntStateOf(0) }
+  var totalToRender by remember { mutableIntStateOf(0) }
   val scope = rememberCoroutineScope()
   val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
    if (picked != null) {
-    contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try { contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
     uri = picked
     videoName = picked.lastPathSegment?.substringAfterLast('/') ?: "Selected video"
     moments = emptyList()
-    status = "Video ready. Add an OpenAI API key to analyse it."
+    outputs = emptyList()
+    status = "Video ready. Add your API key, then tap Find & auto-clip."
    }
   }
-  val accent = Color(0xFF9585FF)
-  MaterialTheme(colorScheme = darkColorScheme(primary = accent, background = Color(0xFF0B0D12), surface = Color(0xFF171B25))) {
-   Surface(Modifier.fillMaxSize(), color = Color(0xFF0B0D12)) {
-    LazyColumn(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+  val accent = Color(0xFFB7A2FF)
+  val bg = Color(0xFF090A12)
+  val panel = Color(0xFF171827)
+  val muted = Color(0xFFA8A6B8)
+  MaterialTheme(colorScheme = darkColorScheme(primary = accent, background = bg, surface = panel)) {
+   Surface(Modifier.fillMaxSize(), color = bg) {
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 22.dp, bottom = 32.dp)) {
      item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-       Icon(Icons.Default.ContentCut, null, tint = accent, modifier = Modifier.size(34.dp))
-       Spacer(Modifier.width(10.dp))
-       Column {
-        Text("CLIP CLIPPER", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-        Text("AI finds the moment. You make it viral.", color = Color.LightGray)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+       Box(Modifier.size(52.dp).clip(RoundedCornerShape(17.dp)).background(Brush.linearGradient(listOf(Color(0xFF8C65FF), Color(0xFF3C2A82)))), contentAlignment = Alignment.Center) {
+        Icon(Icons.Default.ContentCut, null, tint = Color.White, modifier = Modifier.size(29.dp))
+       }
+       Column(Modifier.weight(1f)) {
+        Text("CLIP CLIPPER", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
+        Text("Your highlights, found and cut by AI", color = muted, style = MaterialTheme.typography.bodySmall)
+       }
+       Box(Modifier.clip(CircleShape).background(Color(0xFF242039)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Text("AI EDITOR", color = accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
        }
       }
      }
      item {
-      Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF171B25)), shape = RoundedCornerShape(20.dp)) {
-       Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("1. Choose your video", fontWeight = FontWeight.Bold)
-        OutlinedButton(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
-         Icon(Icons.Default.Movie, null); Spacer(Modifier.width(8.dp)); Text("Select video")
+      Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = panel)) {
+       Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF282044), panel, panel))).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("TURN LONG VIDEOS INTO CLIPS", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+        Text("ChatGPT finds the best bits. Clip Clipper automatically cuts every selected moment into its own video.", color = Color(0xFFD0CCDF), style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+         Icon(Icons.Default.AutoAwesome, null, tint = accent, modifier = Modifier.size(17.dp))
+         Text("Find highlights  ·  Auto-cut  ·  Share", color = accent, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
         }
-        Text(videoName, color = Color.LightGray)
        }
       }
      }
      item {
-      Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF171B25)), shape = RoundedCornerShape(20.dp)) {
-       Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("2. Let ChatGPT find the highlights", fontWeight = FontWeight.Bold)
-        Text("OpenAI API access is required. API usage can cost money and is separate from ChatGPT subscriptions.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("OpenAI API key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-         Text("Maximum clips per analysis", color = Color.LightGray)
-         Text(maxClips.toInt().toString(), color = accent, fontWeight = FontWeight.Bold)
-        }
-        Slider(value = maxClips, onValueChange = { maxClips = it }, valueRange = 3f..8f, steps = 4)
-        Text("Budget Saver sends a compact, time-spread transcript to the AI and asks for only this many highlights. Video cutting stays on your phone.", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
-        Button(onClick = {
-         val selected = uri
-         if (selected == null) { status = "Select a video first."; return@Button }
-         if (!key.startsWith("sk-")) { status = "Enter your OpenAI API key."; return@Button }
-         busy = true; status = "Transcribing audio and finding standout moments…"
-         scope.launch {
-          try {
-           moments = analyse(selected, key, maxClips.toInt())
-           status = if (moments.isEmpty()) "No suitable moments found in this video." else "Found ${moments.size} moments. Choose which clips to render."
-          } catch (e: Exception) { status = "Analysis failed: ${e.message}" }
-          finally { busy = false }
-         }
-        }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-         if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Find viral moments")
-        }
+      SectionCard("01", "Choose your video", "Pick a recording from your phone", panel) {
+       OutlinedButton(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(15.dp)) {
+        Icon(Icons.Default.VideoLibrary, null); Spacer(Modifier.width(9.dp)); Text("Select a video")
+       }
+       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Default.Movie, null, tint = accent, modifier = Modifier.size(18.dp))
+        Text(videoName, color = muted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
        }
       }
      }
-     item { Text(status, color = if (status.startsWith("Analysis failed")) Color(0xFFFF9292) else Color(0xFFB9B2FF)) }
-     if (moments.isNotEmpty()) {
-      item { Text("3. AI-selected moments", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-      items(moments) { m ->
-       Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF171B25))) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-         Text(m.title, fontWeight = FontWeight.Bold)
-         Text("${stamp(m.start)} – ${stamp(m.end)}", color = accent)
-         Text(m.reason, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-         Button(onClick = {
-          val selected = uri ?: return@Button
-          busy = true; status = "Rendering ${m.title}…"
-          scope.launch {
-           try { val file = render(selected, m); outputs = outputs + file; status = "Clip rendered successfully." }
-           catch (e: Exception) { status = "Render failed: ${e.message}" }
-           finally { busy = false }
+     item {
+      SectionCard("02", "AI settings", "Let the AI choose the moments. No manual trimming.", panel) {
+       OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("OpenAI API key") }, placeholder = { Text("sk-…") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), shape = RoundedCornerShape(14.dp))
+       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text("Highlights to find", color = muted)
+        Text(maxClips.toInt().toString(), color = accent, fontWeight = FontWeight.Bold)
+       }
+       Slider(value = maxClips, onValueChange = { maxClips = it }, valueRange = 3f..8f, steps = 4)
+       Text("The AI selects up to ${maxClips.toInt()} moments. Every valid selection is automatically rendered as an MP4 clip.", color = muted, style = MaterialTheme.typography.bodySmall)
+       Button(onClick = {
+        val selected = uri
+        if (selected == null) { status = "Select a video first."; return@Button }
+        if (!key.startsWith("sk-")) { status = "Enter your OpenAI API key."; return@Button }
+        busy = true; progress = 0; totalToRender = 0; moments = emptyList(); outputs = emptyList()
+        status = "Listening to the video and finding the best moments…"
+        scope.launch {
+         try {
+          val found = analyse(selected, key, maxClips.toInt())
+          moments = found
+          if (found.isEmpty()) {
+           status = "The AI couldn't find any valid moments in this video."
+          } else {
+           totalToRender = found.size
+           status = "AI found ${found.size} moments. Automatically cutting them now…"
+           found.forEachIndexed { index, moment ->
+            status = "Cutting clip ${index + 1} of ${found.size}: ${moment.title}"
+            val file = render(selected, moment)
+            outputs = outputs + (moment.title to file)
+            progress = index + 1
+           }
+           status = "Finished! All ${found.size} AI-selected clips are ready to share."
           }
-         }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Cut and save clip") }
+         } catch (e: Exception) { status = "Couldn't finish: ${e.message ?: "Unknown error"}" }
+         finally { busy = false }
+        }
+       }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) {
+        if (busy) { CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp, color = Color.White); Spacer(Modifier.width(10.dp)); Text("Finding & cutting…") }
+        else { Icon(Icons.Default.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("Find & auto-clip", fontWeight = FontWeight.Bold) }
+       }
+       if (busy && totalToRender > 0) {
+        LinearProgressIndicator(progress = { progress.toFloat() / totalToRender.toFloat() }, modifier = Modifier.fillMaxWidth().clip(CircleShape))
+        Text("$progress of $totalToRender clips rendered", color = muted, style = MaterialTheme.typography.labelSmall)
+       }
+      }
+     }
+     item {
+      Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = if (status.startsWith("Couldn't")) Color(0xFF351D27) else Color(0xFF211D35))) {
+       Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        else Icon(if (outputs.isNotEmpty() && !busy) Icons.Default.CheckCircle else Icons.Default.AutoAwesome, null, tint = accent)
+        Text(status, color = Color(0xFFE4DFFF), style = MaterialTheme.typography.bodySmall)
+       }
+      }
+     }
+     if (moments.isNotEmpty()) {
+      item { Text("AI picked these moments", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold) }
+      itemsIndexed(moments) { index, m ->
+       Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = panel)) {
+        Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+         Box(Modifier.size(34.dp).clip(CircleShape).background(Color(0xFF30264F)), contentAlignment = Alignment.Center) {
+          Text("${index + 1}", color = accent, fontWeight = FontWeight.Bold)
+         }
+         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+          Text(m.title, color = Color.White, fontWeight = FontWeight.Bold)
+          Text("${stamp(m.start)} – ${stamp(m.end)}", color = accent, style = MaterialTheme.typography.labelMedium)
+          Text(m.reason, color = muted, style = MaterialTheme.typography.bodySmall)
+         }
+         if (index < progress || outputs.size > index) Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF77D6A1))
         }
        }
       }
      }
      if (outputs.isNotEmpty()) {
-      item { Text("Your clips", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-      items(outputs) { path ->
-       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(File(path).name, color = Color.White)
-        IconButton(onClick = {
-         val share = Intent(Intent.ACTION_SEND).apply {
-          type = "video/mp4"; putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.provider", File(path)))
-          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      item { Text("Your finished clips", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold) }
+      itemsIndexed(outputs) { index, output ->
+       Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = panel)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+         Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF30264F)), contentAlignment = Alignment.Center) {
+          Icon(Icons.Default.PlayArrow, null, tint = accent)
          }
-         startActivity(Intent.createChooser(share, "Share clip"))
-        }) { Icon(Icons.Default.Share, "Share", tint = accent) }
+         Column(Modifier.weight(1f).padding(horizontal = 11.dp)) {
+          Text(output.first, color = Color.White, fontWeight = FontWeight.SemiBold)
+          Text("Clip ${index + 1} · MP4", color = muted, style = MaterialTheme.typography.labelSmall)
+         }
+         IconButton(onClick = {
+          val share = Intent(Intent.ACTION_SEND).apply {
+           type = "video/mp4"
+           putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.provider", File(output.second)))
+           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          }
+          startActivity(Intent.createChooser(share, "Share clip"))
+         }) { Icon(Icons.Default.Share, "Share", tint = accent) }
+        }
        }
       }
      }
-     item { Text("Audio is sent to OpenAI for transcription. Video cutting happens locally on your phone. Share exported clips to TikTok using Android's share menu.", color = Color.Gray, style = MaterialTheme.typography.labelSmall) }
+     item {
+      Text("Privacy & costs: only extracted audio is sent to OpenAI for transcription and highlight selection. Your original video stays on your phone and clips are rendered locally. OpenAI API billing is separate from ChatGPT subscriptions.", color = Color(0xFF777587), style = MaterialTheme.typography.labelSmall)
+     }
     }
+   }
+  }
+ }
+
+ @Composable private fun SectionCard(number: String, title: String, subtitle: String, panel: Color, content: @Composable ColumnScope.() -> Unit) {
+  Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = panel)) {
+   Column(Modifier.fillMaxWidth().padding(17.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+     Box(Modifier.size(29.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF30264F)), contentAlignment = Alignment.Center) {
+      Text(number, color = Color(0xFFB7A2FF), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+     }
+     Column {
+      Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+      Text(subtitle, color = Color(0xFFA8A6B8), style = MaterialTheme.typography.labelSmall)
+     }
+    }
+    content()
    }
   }
  }
@@ -187,8 +269,8 @@ class MainActivity : ComponentActivity() {
    if (!trRes.isSuccessful) error("Transcription API: $trText")
    val tr = JSONObject(trText)
    val duration = tr.optDouble("duration", 0.0)
+   if (duration <= 0.0) error("Couldn't read the video duration from its audio.")
    val segments = tr.optJSONArray("segments") ?: JSONArray()
-   // Keep a compact, evenly-spaced sample so GPT sees the whole recording without a huge prompt.
    val compact = JSONArray()
    val stride = maxOf(1, kotlin.math.ceil(segments.length() / 160.0).toInt())
    var transcriptChars = 0
@@ -213,11 +295,12 @@ class MainActivity : ComponentActivity() {
    val arr = JSONObject(content).optJSONArray("clips") ?: JSONArray()
    buildList {
     for (i in 0 until arr.length()) {
-     val c = arr.getJSONObject(i); val start = c.optDouble("start", 0.0).coerceAtLeast(0.0)
-     val end = c.optDouble("end", 0.0).coerceAtMost(duration)
-     if (end > start && end - start >= 5) add(ClipMoment(start, end, c.optString("title", "Highlight"), c.optString("reason", "AI-selected moment")))
+     val c = arr.getJSONObject(i)
+     val start = c.optDouble("start", 0.0).coerceIn(0.0, duration)
+     val end = c.optDouble("end", 0.0).coerceIn(0.0, duration)
+     if (end > start && end - start >= 5.0) add(ClipMoment(start, end, c.optString("title", "Highlight"), c.optString("reason", "AI-selected moment")))
     }
-   }
+   }.sortedBy { it.start }.distinctBy { (it.start / 2.0).toInt() }
   } finally { audio.delete() }
  }
 
