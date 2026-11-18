@@ -24,4 +24,6 @@ dependencies {
  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
  implementation("androidx.media3:media3-transformer:1.5.1")
  implementation("androidx.media3:media3-common:1.5.1")
+ implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+ implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
 }
