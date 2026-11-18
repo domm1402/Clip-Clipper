@@ -18,7 +18,10 @@ jobs:
         shell: bash
         run: |
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          yes | "${SDKMANAGER}" --licenses
+          # sdkmanager can close its input after accepting all licences; with
+          # GitHub's pipefail setting this makes the upstream yes command report
+          # SIGPIPE even though the licences were accepted.
+          yes | "${SDKMANAGER}" --licenses || true
           "${SDKMANAGER}" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK
