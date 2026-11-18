@@ -31,7 +31,7 @@ final class ClipperModel: ObservableObject {
     @Published var progress = 0.0
 
     func analyseAndClip() async {
-        guard !apiKey.hasPrefix("") || !apiKey.isEmpty else { status = "Enter your OpenAI API key."; return }
+        guard !apiKey.isEmpty else { status = "Enter your OpenAI API key."; return }
         guard let input = videoURL else { status = "Select a video first."; return }
         busy = true; moments = []; clips = []; progress = 0
         defer { busy = false }
@@ -59,7 +59,7 @@ final class ClipperModel: ObservableObject {
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else { throw ClipError.export }
         let out = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
         session.outputURL = out; session.outputFileType = .m4a
-        await session.export()
+        await withCheckedContinuation { continuation in session.exportAsynchronously { continuation.resume() } }
         if session.status != .completed { throw session.error ?? ClipError.export }
         return out
     }
@@ -170,7 +170,8 @@ struct ContentView: View {
                     }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
                     if !model.moments.isEmpty {
                         Text("AI-picked moments").font(.title2.bold())
-                        ForEach(Array(model.moments.enumerated()), id: \.element.id) { index, moment in
+                        ForEach(Array(model.moments.enumerated()), id: \.offset) { index, pair in
+                            let moment = pair.element
                             VStack(alignment: .leading, spacing: 5) {
                                 Text("\(index + 1). \(moment.title)").font(.headline)
                                 Text(String(format: "%.0f–%.0f seconds", moment.start, moment.end)).font(.caption).foregroundStyle(.purple)
