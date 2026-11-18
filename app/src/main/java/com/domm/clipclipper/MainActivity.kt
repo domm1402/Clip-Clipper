@@ -7,6 +7,9 @@ import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import com.yausername.ffmpeg.FFmpeg
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,12 +67,19 @@ class MainActivity : ComponentActivity() {
 
  override fun onCreate(savedInstanceState: Bundle?) {
   super.onCreate(savedInstanceState)
+  try {
+   YoutubeDL.getInstance().init(applicationContext)
+   FFmpeg.getInstance().init(applicationContext)
+  } catch (e: Exception) {
+   android.util.Log.e("ClipClipper", "Downloader initialization failed", e)
+  }
   setContent { Screen() }
  }
 
  @Composable private fun Screen() {
   var uri by remember { mutableStateOf<Uri?>(null) }
   var videoName by remember { mutableStateOf("No video selected") }
+  var sourceUrl by remember { mutableStateOf("") }
   var key by remember { mutableStateOf("") }
   var maxClips by remember { mutableFloatStateOf(5f) }
   var status by remember { mutableStateOf("Choose a video and let AI do the editing.") }
@@ -123,7 +133,9 @@ class MainActivity : ComponentActivity() {
       }
      }
      item {
-      SectionCard("01", "Choose your video", "Pick a recording from your phone", panel) {
+      SectionCard("01", "Choose your video", "Paste a TikTok / YouTube link or pick a file", panel) {
+       OutlinedTextField(value = sourceUrl, onValueChange = { sourceUrl = it; if (it.isNotBlank()) { uri = null; videoName = "Video link ready" } }, label = { Text("TikTok or YouTube video link") }, placeholder = { Text("https://youtu.be/...") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+       Text("Public videos are downloaded on your phone before AI analysis. Live streams are processed after the stream finishes.", color = muted, style = MaterialTheme.typography.bodySmall)
        OutlinedButton(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(15.dp)) {
         Icon(Icons.Default.VideoLibrary, null); Spacer(Modifier.width(9.dp)); Text("Select a video")
        }
@@ -144,13 +156,22 @@ class MainActivity : ComponentActivity() {
        Text("The AI selects up to ${maxClips.toInt()} moments. Every valid selection is automatically rendered as an MP4 clip.", color = muted, style = MaterialTheme.typography.bodySmall)
        Button(onClick = {
         val selected = uri
-        if (selected == null) { status = "Select a video first."; return@Button }
+        val link = sourceUrl.trim()
+        if (selected == null && link.isBlank()) { status = "Paste a TikTok / YouTube link or select a video."; return@Button }
+        if (link.isNotBlank() && !isSupportedVideoUrl(link)) { status = "That link doesn't look like a supported TikTok or YouTube URL."; return@Button }
         if (!key.startsWith("sk-")) { status = "Enter your OpenAI API key."; return@Button }
         busy = true; progress = 0; totalToRender = 0; moments = emptyList(); outputs = emptyList()
         status = "Listening to the video and finding the best moments…"
         scope.launch {
          try {
-          val found = analyse(selected, key, maxClips.toInt())
+          val inputUri = if (link.isNotBlank()) {
+           status = "Downloading video from the link to your phone…"
+           val downloaded = downloadVideo(link)
+           videoName = downloaded.name
+           Uri.fromFile(downloaded)
+          } else selected!!
+          status = "Listening to the video and finding the best moments…"
+          val found = analyse(inputUri, key, maxClips.toInt())
           moments = found
           if (found.isEmpty()) {
            status = "The AI couldn't find any valid moments in this video."
@@ -159,7 +180,7 @@ class MainActivity : ComponentActivity() {
            status = "AI found ${found.size} moments. Automatically cutting them now…"
            found.forEachIndexed { index, moment ->
             status = "Cutting clip ${index + 1} of ${found.size}: ${moment.title}"
-            val file = render(selected, moment)
+            val file = render(inputUri, moment)
             outputs = outputs + (moment.title to file)
             progress = index + 1
            }
@@ -252,6 +273,43 @@ class MainActivity : ComponentActivity() {
     content()
    }
   }
+ }
+
+ private fun isSupportedVideoUrl(value: String): Boolean {
+  return try {
+   val host = Uri.parse(value).host?.lowercase().orEmpty()
+   (host == "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com") ||
+    host == "tiktok.com" || host.endsWith(".tiktok.com"))
+  } catch (_: Exception) { false }
+ }
+
+ private suspend fun downloadVideo(url: String): File = withContext(Dispatchers.IO) {
+  val host = Uri.parse(url).host?.lowercase().orEmpty()
+  if (!isSupportedVideoUrl(url)) error("Only public TikTok and YouTube links are supported.")
+  if (host.contains("youtube") || host == "youtu.be") {
+   // YouTube's live streams can only be analysed once the recording has finished downloading.
+  }
+  val dir = File(cacheDir, "linked-source").apply {
+   deleteRecursively()
+   mkdirs()
+  }
+  val request = YoutubeDLRequest(url).apply {
+   addOption("--no-playlist")
+   addOption("--no-warnings")
+   addOption("--no-part")
+   addOption("-f", "best[ext=mp4]/best")
+   addOption("--recode-video", "mp4")
+   addOption("-o", File(dir, "source.%(ext)s").absolutePath)
+  }
+  val response = try {
+   YoutubeDL.getInstance().execute(request)
+  } catch (e: Exception) {
+   error("Couldn't download that link: ${e.message ?: "the platform may block access"}")
+  }
+  if (response.exitCode != 0) error("Video download failed: ${response.out.takeLast(700)}")
+  val result = dir.listFiles()?.firstOrNull { it.isFile && it.length() > 0 && it.extension.lowercase() == "mp4" }
+   ?: error("The link did not produce a usable MP4 video.")
+  result
  }
 
  private fun stamp(t: Double): String = "%d:%02d".format(t.toInt() / 60, t.toInt() % 60)
