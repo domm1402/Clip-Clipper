@@ -1,0 +1,23 @@
+name: ClipClipper
+options:
+  bundleIdPrefix: com.domm.clipclipper
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  ClipClipper:
+    type: application
+    platform: iOS
+    sources:
+      - ClipClipper
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.domm.clipclipper.ios
+        PRODUCT_NAME: Clip Clipper
+        INFOPLIST_KEY_CFBundleDisplayName: Clip Clipper
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Select a video to find and create AI highlights.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Save generated clips to your photo library.
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
