@@ -1,0 +1,31 @@
+name: Build iOS app
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build iOS simulator app
+        working-directory: ios
+        run: xcodebuild -project ClipClipper.xcodeproj -scheme ClipClipper -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator build
+        run: |
+          cd ios
+          ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Debug-iphonesimulator/ClipClipper.app ClipClipper-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clip-clipper-ios-simulator
+          path: ios/ClipClipper-iOS-Simulator.zip
